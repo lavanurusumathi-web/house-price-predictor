@@ -35,8 +35,14 @@ def ensure_loaded():
         _init()
 
 
-@app.route('/api/predict', methods=['POST', 'OPTIONS'])
+@app.route('/api/predict', methods=['GET', 'POST', 'OPTIONS'])
 def predict():
+    if request.method == 'GET':
+        return jsonify({
+            'status': 'ok',
+            'service': 'house-price-prediction-api',
+            'usage': 'Send a POST request with JSON body containing: sqft, bedrooms, bathrooms, year_built, location_score, distance_to_city_miles, crime_rate, school_rating, has_garage, has_garden, floors, sale_year'
+        })
     if request.method == 'OPTIONS':
         return '', 200
 

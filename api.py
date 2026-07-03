@@ -34,13 +34,24 @@ def load_model():
     feature_names = X.columns.tolist()
 
 
+load_model()
+
+
 @app.route('/')
 def health():
     return jsonify({'status': 'ok', 'service': 'house-price-prediction-api'})
 
 
-@app.route('/api/predict', methods=['POST'])
+@app.route('/api/predict', methods=['POST', 'GET', 'OPTIONS'])
 def predict():
+    if request.method == 'GET':
+        return jsonify({
+            'status': 'ok',
+            'service': 'house-price-prediction-api',
+            'usage': 'Send a POST request with JSON body'
+        })
+    if request.method == 'OPTIONS':
+        return '', 200
     data = request.get_json()
     if not data:
         return jsonify({'error': 'No input provided'}), 400
@@ -91,5 +102,4 @@ def predict():
 
 if __name__ == '__main__':
     port = int(os.environ.get('PORT', 10000))
-    load_model()
     app.run(host='0.0.0.0', port=port)

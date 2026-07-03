@@ -32,6 +32,9 @@ def load_model():
     feature_names = X.columns.tolist()
 
 
+load_model()
+
+
 HTML_TEMPLATE = r"""
 <!DOCTYPE html>
 <html lang="en">
@@ -381,7 +384,5 @@ def predict():
 
 
 if __name__ == '__main__':
-    print("Loading model...")
-    load_model()
-    print("Model loaded. Starting server at http://localhost:5000")
+    print("Starting server at http://localhost:5000")
     app.run(host='0.0.0.0', port=5000, debug=False)

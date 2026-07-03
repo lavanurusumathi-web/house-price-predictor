@@ -1,4 +1,6 @@
 import os
+import sys
+import traceback
 import joblib
 import numpy as np
 import pandas as pd
@@ -8,16 +10,19 @@ from flask_cors import CORS
 app = Flask(__name__)
 CORS(app, origins=["*"])
 
-MODEL_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'models')
-DATA_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'data')
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+
+MODEL_DIR = os.path.join(BASE_DIR, '..', 'models')
+DATA_DIR = os.path.join(BASE_DIR, '..', 'data')
 
 _model = None
 _scaler = None
 _feature_names = None
+_load_error = None
 
 
 def _init():
-    global _model, _scaler, _feature_names
+    global _model, _scaler, _feature_names, _load_error
     _model = joblib.load(os.path.join(MODEL_DIR, 'ridge_(l2).pkl'))
     _scaler = joblib.load(os.path.join(MODEL_DIR, 'scaler.pkl'))
 
@@ -29,14 +34,17 @@ def _init():
     _feature_names = X.columns.tolist()
 
 
-@app.before_request
-def ensure_loaded():
-    if _model is None:
-        _init()
+try:
+    _init()
+except Exception as e:
+    _load_error = traceback.format_exc()
 
 
 @app.route('/api/predict', methods=['GET', 'POST', 'OPTIONS'])
 def predict():
+    if _load_error:
+        return jsonify({'error': 'Model failed to load', 'detail': _load_error.split('\n')[-2]}), 500
+
     if request.method == 'GET':
         return jsonify({
             'status': 'ok',

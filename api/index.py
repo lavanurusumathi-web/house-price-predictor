@@ -1,37 +1,30 @@
 import os
-import sys
 import traceback
 import joblib
 import numpy as np
-import pandas as pd
 from flask import Flask, request, jsonify
-from flask_cors import CORS
 
 app = Flask(__name__)
-CORS(app, origins=["*"])
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-
 MODEL_DIR = os.path.join(BASE_DIR, '..', 'models')
-DATA_DIR = os.path.join(BASE_DIR, '..', 'data')
+
+FEATURE_NAMES = [
+    'sqft', 'bedrooms', 'bathrooms', 'year_built', 'house_age',
+    'location_score', 'distance_to_city_miles', 'crime_rate',
+    'school_rating', 'has_garage', 'has_garden', 'floors',
+    'sale_year', 'sale_month'
+]
 
 _model = None
 _scaler = None
-_feature_names = None
 _load_error = None
 
 
 def _init():
-    global _model, _scaler, _feature_names, _load_error
+    global _model, _scaler, _load_error
     _model = joblib.load(os.path.join(MODEL_DIR, 'ridge_(l2).pkl'))
     _scaler = joblib.load(os.path.join(MODEL_DIR, 'scaler.pkl'))
-
-    df = pd.read_csv(os.path.join(DATA_DIR, 'house_data.csv'), parse_dates=['sale_date'])
-    df['sale_year'] = df['sale_date'].dt.year
-    df['sale_month'] = df['sale_date'].dt.month
-    X = df.drop(['price', 'sale_date'], axis=1)
-    X = pd.get_dummies(X, drop_first=True)
-    _feature_names = X.columns.tolist()
 
 
 try:
@@ -40,30 +33,39 @@ except Exception as e:
     _load_error = traceback.format_exc()
 
 
+def _response(data, status=200):
+    resp = jsonify(data)
+    resp.status_code = status
+    resp.headers['Access-Control-Allow-Origin'] = '*'
+    resp.headers['Access-Control-Allow-Headers'] = 'Content-Type'
+    return resp
+
+
 @app.route('/api/predict', methods=['GET', 'POST', 'OPTIONS'])
 def predict():
     if _load_error:
-        return jsonify({'error': 'Model failed to load', 'detail': _load_error.split('\n')[-2]}), 500
+        return _response({'error': 'Model failed to load', 'detail': _load_error.split('\n')[-2]}, 500)
+
+    if request.method == 'OPTIONS':
+        return _response({})
 
     if request.method == 'GET':
-        return jsonify({
+        return _response({
             'status': 'ok',
             'service': 'house-price-prediction-api',
-            'usage': 'Send a POST request with JSON body containing: sqft, bedrooms, bathrooms, year_built, location_score, distance_to_city_miles, crime_rate, school_rating, has_garage, has_garden, floors, sale_year'
+            'usage': 'POST with JSON: sqft, bedrooms, bathrooms, year_built, location_score, distance_to_city_miles, crime_rate, school_rating, has_garage, has_garden, floors, sale_year'
         })
-    if request.method == 'OPTIONS':
-        return '', 200
 
-    data = request.get_json()
+    data = request.get_json(silent=True)
     if not data:
-        return jsonify({'error': 'No input provided'}), 400
+        return _response({'error': 'No JSON input provided'}, 400)
 
     required = ['sqft', 'bedrooms', 'bathrooms', 'year_built', 'location_score',
                 'distance_to_city_miles', 'crime_rate', 'school_rating',
                 'has_garage', 'has_garden', 'floors', 'sale_year']
     for field in required:
         if field not in data:
-            return jsonify({'error': f'Missing field: {field}'}), 400
+            return _response({'error': f'Missing field: {field}'}, 400)
 
     house_age = 2025 - int(data['year_built'])
     sale_month = 6
@@ -85,18 +87,11 @@ def predict():
         'sale_month': sale_month
     }
 
-    df_input = pd.DataFrame([row])
-    df_input = pd.get_dummies(df_input, drop_first=True)
-
-    for col in _feature_names:
-        if col not in df_input.columns:
-            df_input[col] = 0
-    df_input = df_input[_feature_names]
-
-    X_scaled = _scaler.transform(df_input)
+    features = np.array([[row[name] for name in FEATURE_NAMES]])
+    X_scaled = _scaler.transform(features)
     prediction = _model.predict(X_scaled)[0]
 
-    return jsonify({
+    return _response({
         'predicted_price': round(float(prediction), 2),
         'currency': 'USD'
     })

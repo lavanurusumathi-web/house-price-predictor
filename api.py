@@ -1,7 +1,5 @@
-"""
-api.py - Flask API for house price prediction (Render deployment)
-"""
 import os
+import traceback
 import joblib
 import numpy as np
 import pandas as pd
@@ -11,30 +9,33 @@ from flask_cors import CORS
 app = Flask(__name__)
 CORS(app, origins=["*"])
 
-MODEL_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'models')
-DATA_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'data')
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+MODEL_DIR = os.path.join(BASE_DIR, 'models')
+DATA_DIR = os.path.join(BASE_DIR, 'data')
 
-model = None
-scaler = None
-feature_names = None
+_model = None
+_scaler = None
+_feature_names = None
+_load_error = None
 
 
-def load_model():
-    global model, scaler, feature_names
-    model_path = os.path.join(MODEL_PATH, 'ridge_(l2).pkl')
-    scaler_path = os.path.join(MODEL_PATH, 'scaler.pkl')
-    model = joblib.load(model_path)
-    scaler = joblib.load(scaler_path)
+def _init():
+    global _model, _scaler, _feature_names, _load_error
+    _model = joblib.load(os.path.join(MODEL_DIR, 'ridge_(l2).pkl'))
+    _scaler = joblib.load(os.path.join(MODEL_DIR, 'scaler.pkl'))
 
-    df = pd.read_csv(os.path.join(DATA_PATH, 'house_data.csv'), parse_dates=['sale_date'])
+    df = pd.read_csv(os.path.join(DATA_DIR, 'house_data.csv'), parse_dates=['sale_date'])
     df['sale_year'] = df['sale_date'].dt.year
     df['sale_month'] = df['sale_date'].dt.month
     X = df.drop(['price', 'sale_date'], axis=1)
     X = pd.get_dummies(X, drop_first=True)
-    feature_names = X.columns.tolist()
+    _feature_names = X.columns.tolist()
 
 
-load_model()
+try:
+    _init()
+except Exception as e:
+    _load_error = traceback.format_exc()
 
 
 @app.route('/')
@@ -44,6 +45,9 @@ def health():
 
 @app.route('/api/predict', methods=['POST', 'GET', 'OPTIONS'])
 def predict():
+    if _load_error:
+        return jsonify({'error': 'Model failed to load', 'detail': _load_error.split('\n')[-2]}), 500
+
     if request.method == 'GET':
         return jsonify({
             'status': 'ok',
@@ -52,6 +56,7 @@ def predict():
         })
     if request.method == 'OPTIONS':
         return '', 200
+
     data = request.get_json()
     if not data:
         return jsonify({'error': 'No input provided'}), 400
@@ -86,13 +91,13 @@ def predict():
     df_input = pd.DataFrame([row])
     df_input = pd.get_dummies(df_input, drop_first=True)
 
-    for col in feature_names:
+    for col in _feature_names:
         if col not in df_input.columns:
             df_input[col] = 0
-    df_input = df_input[feature_names]
+    df_input = df_input[_feature_names]
 
-    X_scaled = scaler.transform(df_input)
-    prediction = model.predict(X_scaled)[0]
+    X_scaled = _scaler.transform(df_input)
+    prediction = _model.predict(X_scaled)[0]
 
     return jsonify({
         'predicted_price': round(float(prediction), 2),
